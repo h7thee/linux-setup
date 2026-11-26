@@ -1,195 +1,135 @@
 #!/usr/bin/env bash
-# =====================================================================
-#  setup.sh - my personal post-install script for EndeavourOS (Arch-based)
-#
-#  What it does:
-#    1. Updates the system
-#    2. Installs my everyday packages (official repos + AUR)
-#    3. Optionally installs Hyprland and copies my Hyprland config
-#    4. Turns on a few useful services
-#
-#  How to run:
-#    chmod +x setup.sh
-#    ./setup.sh --dry-run        # just show what WOULD happen (safe)
-#    ./setup.sh                  # install the everyday packages
-#    ./setup.sh --hyprland       # also install Hyprland + copy hyprland.conf
-#
-#  It is safe to run again: already-installed packages are skipped.
-#  To add a package, just add its name to a list below.
-# =====================================================================
+# Personal post-install setup for EndeavourOS + Hyprland.
+# Usage:
+#   ./setup.sh --dry-run
+#   ./setup.sh
+#   ./setup.sh --hyprland
+#   ./setup.sh --hyprland --dry-run
 
-set -uo pipefail
+set -Eeuo pipefail
 
 DRY_RUN=0
 WITH_HYPRLAND=0
 for arg in "$@"; do
-    case "$arg" in
-        --dry-run)  DRY_RUN=1 ;;
-        --hyprland) WITH_HYPRLAND=1 ;;
-        -h|--help)  sed -n '2,19p' "$0"; exit 0 ;;
-        *) echo "Unknown option: $arg (use --help)"; exit 1 ;;
-    esac
+  case "$arg" in
+    --dry-run) DRY_RUN=1 ;;
+    --hyprland) WITH_HYPRLAND=1 ;;
+    -h|--help)
+      sed -n '1,14p' "$0"
+      exit 0
+      ;;
+    *) echo "Unknown option: $arg (use --help)." >&2; exit 2 ;;
+  esac
 done
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 FAILED=()
 
-# ---------------------------------------------------------------------
-# PACKAGE LISTS  (edit these!)
-# ---------------------------------------------------------------------
-
-# Everyday tools from the official Arch repos (installed with pacman)
-PACMAN_PKGS=(
-    git base-devel stow
-    neovim htop btop fastfetch
-    unzip zip wget curl
-    fzf ripgrep bat eza tmux
-    firefox
-    # --- coding (C++ / Python / web) ---
-    gcc gdb make cmake clang
-    python python-pip
-    nodejs npm
-    code                      # Code - OSS (the open-source VS Code build)
-    # --- laptop basics ---
-    brightnessctl
-    bluez bluez-utils
-)
-
-# Things that only exist in the AUR (installed with yay)
-AUR_PKGS=(
-    # visual-studio-code-bin   # Microsoft's VS Code (alternative to 'code')
-    # brave-bin                # Brave browser
-)
-
-# Only installed when you run with --hyprland
-HYPRLAND_PKGS=(
-    hyprland                   # the window manager itself
-    xdg-desktop-portal-hyprland # screen sharing, file pickers
-    hyprpolkitagent            # password pop-ups for admin tasks
-    hyprpaper                  # wallpaper
-    hypridle hyprlock          # idle timeout + lock screen
-    waybar                     # top status bar
-    wofi                       # app launcher (Super+D)
-    kitty                      # terminal
-    mako                       # notifications
-    grim slurp wl-clipboard    # screenshots + clipboard
-    thunar                     # file manager
-    pavucontrol                # volume control
-    network-manager-applet     # wifi tray icon
-    playerctl                  # media keys
-    qt5-wayland qt6-wayland    # make Qt apps behave on Wayland
-    noto-fonts noto-fonts-emoji
-    ttf-jetbrains-mono-nerd    # nice font with icons
-)
-
-# Services to switch on (systemd)
-SERVICES=(
-    bluetooth.service
-    fstrim.timer               # keeps SSD healthy
-)
-
-# ---------------------------------------------------------------------
-# HELPER FUNCTIONS
-# ---------------------------------------------------------------------
-
-say() { echo; echo "==> $*"; }
+say() { printf '\n==> %s\n' "$*"; }
 
 run() {
-    if [ "$DRY_RUN" -eq 1 ]; then
-        echo "[dry-run] $*"
-    else
-        "$@"
-    fi
+  if (( DRY_RUN )); then
+    printf '[dry-run]'
+    printf ' %q' "$@"
+    printf '\n'
+  else
+    "$@"
+  fi
 }
 
-# Install packages one by one, so a single wrong name doesn't stop everything.
-install_pkgs() {
-    local tool="$1"; shift
-    local pkg
-    for pkg in "$@"; do
-        case "$tool" in
-            pacman) run sudo pacman -S --needed --noconfirm "$pkg" || FAILED+=("$pkg") ;;
-            yay)    run yay -S --needed --noconfirm "$pkg"          || FAILED+=("$pkg") ;;
-        esac
-    done
-}
-
-# ---------------------------------------------------------------------
-# SAFETY CHECKS
-# ---------------------------------------------------------------------
-
-if [ "$(id -u)" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
-    echo "Please run this as your normal user (not root / not with sudo)."
-    echo "The script asks for your password itself when needed."
-    exit 1
+# This script is intentionally targeted at EndeavourOS, not every Arch derivative.
+if [[ ! -r /etc/os-release ]]; then
+  echo "Cannot identify the operating system (/etc/os-release missing)." >&2
+  exit 1
+fi
+# shellcheck disable=SC1091
+. /etc/os-release
+if [[ "${ID:-}" != "endeavouros" ]]; then
+  echo "This setup is intended for EndeavourOS. Detected: ${PRETTY_NAME:-unknown}." >&2
+  exit 1
 fi
 
-if ! command -v pacman >/dev/null 2>&1; then
-    if [ "$DRY_RUN" -eq 1 ]; then
-        echo "(note: pacman not found here - this machine is not Arch-based; dry-run only)"
-    else
-        echo "pacman not found. This script is for Arch-based distros (EndeavourOS, Arch, ...)."
-        exit 1
-    fi
+if (( EUID == 0 )); then
+  echo "Run this script as your normal user, without sudo." >&2
+  exit 1
 fi
+command -v pacman >/dev/null || { echo "pacman was not found." >&2; exit 1; }
 
-# ---------------------------------------------------------------------
-# 1. UPDATE
-# ---------------------------------------------------------------------
-say "Updating the system"
-run sudo pacman -Syu --noconfirm
+# Packages selected for this setup. 'code' is the Code - OSS package.
+BASE_PKGS=(
+  fastfetch btop fzf ripgrep bat curl wget zip unzip tmux htop eza
+  gcc gdb python python-pip nodejs npm clang cmake code
+  brightnessctl
+)
 
-# ---------------------------------------------------------------------
-# 2. PACKAGES
-# ---------------------------------------------------------------------
-say "Installing everyday packages (pacman)"
-install_pkgs pacman "${PACMAN_PKGS[@]}"
+# Hyprland and its supporting desktop utilities.
+HYPRLAND_PKGS=(
+  hyprland xdg-desktop-portal-hyprland
+  waybar wofi kitty thunar hyprpaper hyprlock hypridle mako
+  grim slurp wl-clipboard pavucontrol playerctl
+  hyprpolkitagent network-manager-applet
+)
 
-if [ "${#AUR_PKGS[@]}" -gt 0 ]; then
-    say "Installing AUR packages (yay)"
-    if command -v yay >/dev/null 2>&1 || [ "$DRY_RUN" -eq 1 ]; then
-        install_pkgs yay "${AUR_PKGS[@]}"
-    else
-        echo "yay is not installed, skipping AUR packages."
-    fi
-fi
+# Vivaldi is distributed through the AUR, not the standard Arch repos.
+AUR_PKGS=(vivaldi)
 
-# ---------------------------------------------------------------------
-# 3. HYPRLAND (optional)
-# ---------------------------------------------------------------------
-if [ "$WITH_HYPRLAND" -eq 1 ]; then
-    say "Installing Hyprland and friends"
-    install_pkgs pacman "${HYPRLAND_PKGS[@]}"
-
-    say "Copying Hyprland config"
-    TARGET="$HOME/.config/hypr/hyprland.conf"
-    if [ -f "$SCRIPT_DIR/hyprland.conf" ]; then
-        run mkdir -p "$HOME/.config/hypr"
-        if [ -f "$TARGET" ]; then
-            run cp "$TARGET" "$TARGET.backup.$(date +%Y%m%d-%H%M%S)"
-            echo "Existing config backed up next to the original."
-        fi
-        run cp "$SCRIPT_DIR/hyprland.conf" "$TARGET"
-    else
-        echo "No hyprland.conf found next to setup.sh - skipping."
-    fi
-fi
-
-# ---------------------------------------------------------------------
-# 4. SERVICES
-# ---------------------------------------------------------------------
-say "Enabling services"
-for svc in "${SERVICES[@]}"; do
-    run sudo systemctl enable --now "$svc" || FAILED+=("service:$svc")
-done
-
-# ---------------------------------------------------------------------
-# SUMMARY
-# ---------------------------------------------------------------------
-echo
-if [ "${#FAILED[@]}" -eq 0 ]; then
-    echo "All done. Reboot when you are ready."
+say "Target: ${PRETTY_NAME}"
+say "Selected browser: Vivaldi (AUR)"
+say "Selected editor: Code - OSS (pacman package: code)"
+say "Base packages: ${BASE_PKGS[*]}"
+if (( WITH_HYPRLAND )); then
+  say "Hyprland packages: ${HYPRLAND_PKGS[*]}"
 else
-    echo "Done, but these failed (check the spelling or search for the right name):"
-    printf '  - %s\n' "${FAILED[@]}"
+  say "Hyprland packages will be skipped (use --hyprland to include them)."
 fi
+
+if (( DRY_RUN )); then
+  say "Dry run only: no packages, services, or configuration files will be changed."
+  run sudo pacman -Syu
+  run sudo pacman -S --needed "${BASE_PKGS[@]}"
+  if (( WITH_HYPRLAND )); then
+    run sudo pacman -S --needed "${HYPRLAND_PKGS[@]}"
+  fi
+  run yay -S --needed vivaldi
+  if (( WITH_HYPRLAND )); then
+    run install -D "$SCRIPT_DIR/hyprland.conf" "$HOME/.config/hypr/hyprland.conf"
+  fi
+  exit 0
+fi
+
+printf '\nReview the package list above. Continue? [y/N] '
+read -r answer
+[[ "$answer" =~ ^[Yy]$ ]] || { echo "Cancelled; no changes made."; exit 0; }
+
+say "Updating EndeavourOS"
+sudo pacman -Syu
+
+say "Installing selected official repository packages"
+sudo pacman -S --needed "${BASE_PKGS[@]}"
+
+if (( WITH_HYPRLAND )); then
+  say "Installing Hyprland and selected desktop utilities"
+  sudo pacman -S --needed "${HYPRLAND_PKGS[@]}"
+fi
+
+say "Installing Vivaldi from the AUR"
+if ! command -v yay >/dev/null 2>&1; then
+  echo "yay is not installed. Install an AUR helper (EndeavourOS commonly provides yay), then rerun this script." >&2
+  exit 1
+fi
+yay -S --needed vivaldi
+
+if (( WITH_HYPRLAND )); then
+  say "Installing your Hyprland configuration"
+  TARGET="$HOME/.config/hypr/hyprland.conf"
+  mkdir -p "$(dirname "$TARGET")"
+  if [[ -e "$TARGET" ]]; then
+    BACKUP="$TARGET.backup.$(date +%Y%m%d-%H%M%S)"
+    cp -a "$TARGET" "$BACKUP"
+    echo "Existing configuration backed up to: $BACKUP"
+  fi
+  install -m 0644 "$SCRIPT_DIR/hyprland.conf" "$TARGET"
+fi
+
+say "Finished"
+echo "Review any package-manager messages above. Log out and choose the Hyprland session if it is not already active."
