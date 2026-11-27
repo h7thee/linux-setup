@@ -1,32 +1,25 @@
 #!/usr/bin/env bash
-# Personal post-install setup for EndeavourOS + Hyprland.
-# Usage:
-#   ./setup.sh --dry-run
-#   ./setup.sh
-#   ./setup.sh --hyprland
-#   ./setup.sh --hyprland --dry-run
+# EndeavourOS + Hyprland personal setup.
+# Run as your normal user: ./setup.sh --hyprland
 
 set -Eeuo pipefail
 
-DRY_RUN=0
 WITH_HYPRLAND=0
+DRY_RUN=0
 for arg in "$@"; do
   case "$arg" in
-    --dry-run) DRY_RUN=1 ;;
     --hyprland) WITH_HYPRLAND=1 ;;
+    --dry-run) DRY_RUN=1 ;;
     -h|--help)
-      sed -n '1,14p' "$0"
+      echo "Usage: ./setup.sh [--hyprland] [--dry-run]"
       exit 0
       ;;
-    *) echo "Unknown option: $arg (use --help)." >&2; exit 2 ;;
+    *) echo "Unknown option: $arg" >&2; exit 2 ;;
   esac
 done
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-FAILED=()
-
 say() { printf '\n==> %s\n' "$*"; }
-
 run() {
   if (( DRY_RUN )); then
     printf '[dry-run]'
@@ -37,32 +30,25 @@ run() {
   fi
 }
 
-# This script is intentionally targeted at EndeavourOS, not every Arch derivative.
 if [[ ! -r /etc/os-release ]]; then
-  echo "Cannot identify the operating system (/etc/os-release missing)." >&2
+  echo "Cannot identify the operating system." >&2
   exit 1
 fi
-# shellcheck disable=SC1091
 . /etc/os-release
 if [[ "${ID:-}" != "endeavouros" ]]; then
-  echo "This setup is intended for EndeavourOS. Detected: ${PRETTY_NAME:-unknown}." >&2
+  echo "This script is intended for EndeavourOS; detected ${PRETTY_NAME:-unknown}." >&2
   exit 1
 fi
-
 if (( EUID == 0 )); then
-  echo "Run this script as your normal user, without sudo." >&2
+  echo "Do not run this script with sudo." >&2
   exit 1
 fi
-command -v pacman >/dev/null || { echo "pacman was not found." >&2; exit 1; }
+command -v pacman >/dev/null || { echo "pacman not found." >&2; exit 1; }
 
-# Packages selected for this setup. 'code' is the Code - OSS package.
 BASE_PKGS=(
   fastfetch btop fzf ripgrep bat curl wget zip unzip tmux htop eza
-  gcc gdb python python-pip nodejs npm clang cmake code
-  brightnessctl
+  gcc gdb python python-pip nodejs npm clang cmake code brightnessctl
 )
-
-# Hyprland and its supporting desktop utilities.
 HYPRLAND_PKGS=(
   hyprland xdg-desktop-portal-hyprland
   waybar wofi kitty thunar hyprpaper hyprlock hypridle mako
@@ -70,66 +56,71 @@ HYPRLAND_PKGS=(
   hyprpolkitagent network-manager-applet
 )
 
-# Vivaldi is distributed through the AUR, not the standard Arch repos.
-AUR_PKGS=(vivaldi)
-
-say "Target: ${PRETTY_NAME}"
-say "Selected browser: Vivaldi (AUR)"
-say "Selected editor: Code - OSS (pacman package: code)"
+say "EndeavourOS setup"
 say "Base packages: ${BASE_PKGS[*]}"
 if (( WITH_HYPRLAND )); then
-  say "Hyprland packages: ${HYPRLAND_PKGS[*]}"
-else
-  say "Hyprland packages will be skipped (use --hyprland to include them)."
+  say "Hyprland desktop packages: ${HYPRLAND_PKGS[*]}"
 fi
 
 if (( DRY_RUN )); then
-  say "Dry run only: no packages, services, or configuration files will be changed."
+  say "Dry run: no changes will be made."
   run sudo pacman -Syu
   run sudo pacman -S --needed "${BASE_PKGS[@]}"
   if (( WITH_HYPRLAND )); then
     run sudo pacman -S --needed "${HYPRLAND_PKGS[@]}"
+    run install -Dm644 "$SCRIPT_DIR/hyprland.conf" "$HOME/.config/hypr/hyprland.conf"
+    run install -Dm644 "$SCRIPT_DIR/waybar/config.jsonc" "$HOME/.config/waybar/config.jsonc"
+    run install -Dm644 "$SCRIPT_DIR/waybar/style.css" "$HOME/.config/waybar/style.css"
+    run install -Dm644 "$SCRIPT_DIR/wofi/style.css" "$HOME/.config/wofi/style.css"
   fi
-  run yay -S --needed vivaldi
-  if (( WITH_HYPRLAND )); then
-    run install -D "$SCRIPT_DIR/hyprland.conf" "$HOME/.config/hypr/hyprland.conf"
+  if command -v yay >/dev/null 2>&1; then
+    run yay -S --needed vivaldi
+  else
+    say "yay not found; Vivaldi will be skipped in this dry run."
   fi
   exit 0
 fi
 
-printf '\nReview the package list above. Continue? [y/N] '
+printf '\nReview the package list. Continue? [y/N] '
 read -r answer
-[[ "$answer" =~ ^[Yy]$ ]] || { echo "Cancelled; no changes made."; exit 0; }
+[[ "$answer" =~ ^[Yy]$ ]] || { echo "Cancelled."; exit 0; }
 
-say "Updating EndeavourOS"
+say "Updating system"
 sudo pacman -Syu
-
-say "Installing selected official repository packages"
+say "Installing base packages"
 sudo pacman -S --needed "${BASE_PKGS[@]}"
 
 if (( WITH_HYPRLAND )); then
-  say "Installing Hyprland and selected desktop utilities"
+  say "Installing Hyprland and desktop packages"
   sudo pacman -S --needed "${HYPRLAND_PKGS[@]}"
 fi
 
-say "Installing Vivaldi from the AUR"
-if ! command -v yay >/dev/null 2>&1; then
-  echo "yay is not installed. Install an AUR helper (EndeavourOS commonly provides yay), then rerun this script." >&2
-  exit 1
+if command -v yay >/dev/null 2>&1; then
+  say "Installing Vivaldi from the AUR"
+  yay -S --needed vivaldi
+else
+  say "yay not found; skipping Vivaldi. Install yay and rerun if you want it."
 fi
-yay -S --needed vivaldi
+
+backup_and_install() {
+  local source="$1"
+  local target="$2"
+  if [[ -e "$target" ]]; then
+    local backup="${target}.backup.$(date +%Y%m%d-%H%M%S)"
+    cp -a "$target" "$backup"
+    echo "Backed up $target to $backup"
+  fi
+  install -Dm644 "$source" "$target"
+}
 
 if (( WITH_HYPRLAND )); then
-  say "Installing your Hyprland configuration"
-  TARGET="$HOME/.config/hypr/hyprland.conf"
-  mkdir -p "$(dirname "$TARGET")"
-  if [[ -e "$TARGET" ]]; then
-    BACKUP="$TARGET.backup.$(date +%Y%m%d-%H%M%S)"
-    cp -a "$TARGET" "$BACKUP"
-    echo "Existing configuration backed up to: $BACKUP"
-  fi
-  install -m 0644 "$SCRIPT_DIR/hyprland.conf" "$TARGET"
+  say "Installing Hyprland, Waybar, and Wofi configuration files"
+  backup_and_install "$SCRIPT_DIR/hyprland.conf" "$HOME/.config/hypr/hyprland.conf"
+  backup_and_install "$SCRIPT_DIR/waybar/config.jsonc" "$HOME/.config/waybar/config.jsonc"
+  backup_and_install "$SCRIPT_DIR/waybar/style.css" "$HOME/.config/waybar/style.css"
+  backup_and_install "$SCRIPT_DIR/wofi/style.css" "$HOME/.config/wofi/style.css"
 fi
 
-say "Finished"
-echo "Review any package-manager messages above. Log out and choose the Hyprland session if it is not already active."
+say "Setup complete"
+echo "Log out and start a fresh Hyprland session to load all startup settings."
+echo "Shortcuts: Super+Q terminal | Super+D app launcher | Super+E file manager | Super+B browser"
