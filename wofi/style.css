@@ -1,0 +1,7 @@
+* { font-family: "Noto Sans", "DejaVu Sans", sans-serif; font-size: 14px; }
+window { background-color: rgba(24, 24, 32, 0.97); border: 1px solid #45475a; border-radius: 12px; }
+#input { color: #cdd6f4; background-color: #313244; border: 1px solid #585b70; border-radius: 8px; padding: 10px; margin: 10px; }
+#inner-box { margin: 4px; }
+#entry { color: #cdd6f4; padding: 9px; border-radius: 7px; }
+#entry:selected { color: #1e1e2e; background-color: #a6e3a1; }
+#text { margin: 0 8px; }
