@@ -1,0 +1,20 @@
+* { font-family: "Noto Sans", "DejaVu Sans", sans-serif; font-size: 12px; min-height: 0; }
+window#waybar { background: transparent; color: #e6e6e6; }
+#workspaces, #window, #clock, #pulseaudio, #network, #backlight, #battery, #tray {
+  background: rgba(24, 24, 32, 0.94); border: 1px solid rgba(150, 150, 170, 0.22);
+  border-radius: 9px; padding: 0 12px; margin: 0 2px;
+}
+#workspaces { padding: 0 4px; }
+#workspaces button { color: #a9a9b8; background: transparent; border: 0; border-radius: 7px; padding: 0 10px; margin: 4px 2px; }
+#workspaces button.active { color: #171720; background: #a6e3a1; }
+#workspaces button.urgent { color: #fff; background: #f38ba8; }
+#workspaces button:hover { background: rgba(166, 227, 161, 0.22); box-shadow: none; }
+#window { color: #cdd6f4; }
+#clock { color: #f9e2af; font-weight: 700; }
+#pulseaudio { color: #cba6f7; }
+#network { color: #89dceb; }
+#backlight { color: #f9e2af; }
+#battery { color: #a6e3a1; }
+#battery.warning { color: #fab387; }
+#battery.critical { color: #f38ba8; }
+#tray { padding: 0 8px; }
