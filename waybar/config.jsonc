@@ -1,0 +1,36 @@
+{
+  "layer": "top",
+  "position": "top",
+  "height": 34,
+  "spacing": 6,
+  "margin-top": 6,
+  "margin-left": 8,
+  "margin-right": 8,
+  "modules-left": ["hyprland/workspaces", "hyprland/window"],
+  "modules-center": ["clock"],
+  "modules-right": ["pulseaudio", "network", "backlight", "battery", "tray"],
+  "hyprland/workspaces": {
+    "format": "{name}",
+    "on-click": "activate",
+    "on-scroll-up": "hyprctl dispatch workspace e+1",
+    "on-scroll-down": "hyprctl dispatch workspace e-1"
+  },
+  "hyprland/window": {"format": "{}", "max-length": 48, "separate-outputs": true},
+  "clock": {
+    "format": "{:%a, %d %b  %H:%M}",
+    "tooltip-format": "<big>{:%A, %d %B %Y}</big>\n<tt>{calendar}</tt>"
+  },
+  "pulseaudio": {"format": "VOL {volume}%", "format-muted": "MUTE", "on-click": "pavucontrol", "scroll-step": 5},
+  "network": {"format-wifi": "WIFI {essid}", "format-ethernet": "LAN", "format-disconnected": "OFFLINE", "tooltip-format": "{ifname}: {ipaddr}"},
+  "backlight": {"format": "BRI {percent}%", "tooltip": false},
+  "battery": {
+    "states": {"warning": 30, "critical": 15},
+    "format": "BAT {capacity}%",
+    "format-charging": "CHG {capacity}%",
+    "format-plugged": "AC",
+    "format-warning": "LOW {capacity}%",
+    "format-critical": "LOW {capacity}%",
+    "tooltip-format": "{timeTo}"
+  },
+  "tray": {"icon-size": 16, "spacing": 8}
+}
